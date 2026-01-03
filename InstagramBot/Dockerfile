@@ -16,8 +16,7 @@ WORKDIR /app
 COPY --from=build /app/out .
 
 # Create non-root user
-RUN adduser --disabled-password --gecos '' appuser && chown -R appuser /app
-USER appuser
+USER app
 
 EXPOSE 5000
 ENTRYPOINT ["dotnet", "InstagramBot.dll"]
