@@ -3,7 +3,9 @@ using System.Threading.RateLimiting;
 using AIWebAPI.Interfaces;
 using AIWebAPI.Persistence.Contexts;
 using AIWebAPI.Services;
+using Betalgo.Ranul.OpenAI.Extensions;
 using Betalgo.Ranul.OpenAI.Interfaces;
+using Betalgo.Ranul.OpenAI.Managers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 using Qdrant.Client;
@@ -85,12 +87,14 @@ builder.Services.AddSingleton<QdrantClient>(sp =>
 // OpenAI Service with Polly retry policy
 builder.Services.AddHttpClient<IOpenAIService>();
 
-// builder.Services.AddSingleton<IOpenAIService>(sp =>
-//     new IOpenAIService(builder.Configuration["OpenAI:ApiKey"]));
-
+builder.Services.AddOpenAIService(options =>
+{
+    options.ApiKey = builder.Configuration["OpenAI:ApiKey"] ?? "<OPENAI_API_KEY>";
+});
 // Custom Services
 builder.Services.AddScoped<IToolService, ToolService>();
 builder.Services.AddScoped<ILLMService, LLMService>();
+builder.Services.AddScoped<IVectorService, VectorService>();
 builder.Services.AddScoped<IFunctionToolService, FunctionToolService>();
 
 // Redis Cache
@@ -159,6 +163,12 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.UseHttpsRedirection();
+
+app.UseRouting();
+app.UseCors("AllowSpecificOrigins");
+app.UseRateLimiter();
+
+app.MapControllers();
 app.Run();
 
 record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)

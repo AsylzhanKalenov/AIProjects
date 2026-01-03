@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15
+    container_name: instagram_bot_db
+    restart: always
+    environment:
+      POSTGRES_USER: bot_user
+      POSTGRES_PASSWORD: bot_password
+      POSTGRES_DB: instagram_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: instagram_bot_app
+    restart: always
+    environment:
+      - ConnectionStrings__DefaultConnection=Host=db;Port=5432;Database=instagram_db;Username=bot_user;Password=bot_password
+      - ASPNETCORE_URLS=http://+:5000
+    ports:
+      - "80:5000"
+    depends_on:
+      - db
+
+volumes:
+  postgres_data:

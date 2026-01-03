@@ -100,47 +100,58 @@ public class ToolDbContext : DbContext
 
         private void SeedData(ModelBuilder modelBuilder)
         {
-            var toolIds = new[] { Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid() };
+            var toolIds = new[]
+            {
+                "183e34f1-1a42-4445-ae48-55d910b9e103", 
+                "63f49afd-4383-4062-ac6d-d98633b19fc7", 
+                "79660627-c0af-439b-b64c-329c7f96fcbd"
+            };
+
+            var seedCreatedAtUtc = new DateTime(2025, 01, 01, 0, 0, 0, DateTimeKind.Utc);
+            var seedUpdatedAtUtc = new DateTime(2025, 01, 01, 0, 0, 0, DateTimeKind.Utc);
 
             modelBuilder.Entity<Tool>().HasData(
                 new Tool
                 {
-                    Id = toolIds[0],
+                    Id = Guid.Parse(toolIds[0]),
                     Name = "Cordless Drill",
                     Category = "Power Tools",
                     Description = "High-performance 20V cordless drill with variable speed",
+                    Specifications = new Dictionary<string, object>(),
                     Manufacturer = "DeWalt",
                     ModelNumber = "DCD777C2",
                     Price = 159.99m,
                     Availability = true,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
+                    CreatedAt = seedCreatedAtUtc,
+                    UpdatedAt = seedUpdatedAtUtc
                 },
                 new Tool
                 {
-                    Id = toolIds[1],
+                    Id = Guid.Parse(toolIds[1]),
                     Name = "Circular Saw",
                     Category = "Power Tools",
                     Description = "7-1/4 inch circular saw with laser guide",
+                    Specifications = new Dictionary<string, object>(),
                     Manufacturer = "Makita",
                     ModelNumber = "5007F",
                     Price = 129.99m,
                     Availability = true,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
+                    CreatedAt = seedCreatedAtUtc,
+                    UpdatedAt = seedUpdatedAtUtc
                 },
                 new Tool
                 {
-                    Id = toolIds[2],
+                    Id = Guid.Parse(toolIds[2]),
                     Name = "Digital Multimeter",
                     Category = "Measuring Tools",
                     Description = "Professional digital multimeter with auto-ranging",
+                    Specifications = new Dictionary<string, object>(),
                     Manufacturer = "Fluke",
                     ModelNumber = "115",
                     Price = 179.99m,
                     Availability = true,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
+                    CreatedAt = seedCreatedAtUtc,
+                    UpdatedAt = seedUpdatedAtUtc
                 }
             );
         }

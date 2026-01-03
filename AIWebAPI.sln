@@ -7,6 +7,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AIWebAPI", "AIWebAPI\AIWebA
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AIAgent", "AIAgent\AIAgent.csproj", "{3F3A321A-D546-4794-9CA8-2D99F54F4DDC}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "InstagramBot", "InstagramBot\InstagramBot.csproj", "{98CFEAE1-C9A0-4268-A0ED-A35CCACE29C3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +23,10 @@ Global
 		{3F3A321A-D546-4794-9CA8-2D99F54F4DDC}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{3F3A321A-D546-4794-9CA8-2D99F54F4DDC}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{3F3A321A-D546-4794-9CA8-2D99F54F4DDC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{98CFEAE1-C9A0-4268-A0ED-A35CCACE29C3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{98CFEAE1-C9A0-4268-A0ED-A35CCACE29C3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{98CFEAE1-C9A0-4268-A0ED-A35CCACE29C3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{98CFEAE1-C9A0-4268-A0ED-A35CCACE29C3}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -6,12 +6,12 @@ namespace AIWebAPI.Services;
 
 public class FunctionToolService : IFunctionToolService
 {
-    private readonly IToolService _toolService;
+    private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<FunctionToolService> _logger;
 
-    public FunctionToolService(IToolService toolService, ILogger<FunctionToolService> logger)
+    public FunctionToolService(IServiceProvider serviceProvider, ILogger<FunctionToolService> logger)
     {
-        _toolService = toolService;
+        _serviceProvider = serviceProvider;
         _logger = logger;
     }
 
@@ -35,6 +35,9 @@ public class FunctionToolService : IFunctionToolService
 
     private async Task<string> SearchTools(Dictionary<string, JsonElement> parameters)
     {
+        using var scope = _serviceProvider.CreateScope();
+        var toolService = scope.ServiceProvider.GetRequiredService<IToolService>();
+
         var category = parameters.ContainsKey("category") 
             ? parameters["category"].GetString() : null;
         var name = parameters.ContainsKey("name") 
@@ -42,7 +45,7 @@ public class FunctionToolService : IFunctionToolService
         var maxPrice = parameters.ContainsKey("max_price") 
             ? parameters["max_price"].GetDecimal() : decimal.MaxValue;
 
-        var tools = await _toolService.SearchToolsAsync(category, name, maxPrice);
+        var tools = await toolService.SearchToolsAsync(category, name, maxPrice);
         
         return JsonSerializer.Serialize(tools.Select(t => new
         {
@@ -56,40 +59,52 @@ public class FunctionToolService : IFunctionToolService
 
     private async Task<string> GetToolDetails(Dictionary<string, JsonElement> parameters)
     {
+        using var scope = _serviceProvider.CreateScope();
+        var toolService = scope.ServiceProvider.GetRequiredService<IToolService>();
+
         var toolId = Guid.Parse(parameters["tool_id"].GetString());
-        var tool = await _toolService.GetToolByIdAsync(toolId);
+        var tool = await toolService.GetToolByIdAsync(toolId);
         
         return JsonSerializer.Serialize(tool);
     }
 
     private async Task<string> CheckAvailability(Dictionary<string, JsonElement> parameters)
     {
+        using var scope = _serviceProvider.CreateScope();
+        var toolService = scope.ServiceProvider.GetRequiredService<IToolService>();
+
         var toolIds = parameters["tool_ids"]
             .EnumerateArray()
             .Select(e => Guid.Parse(e.GetString()))
             .ToList();
 
-        var availability = await _toolService.CheckAvailabilityAsync(toolIds);
+        var availability = await toolService.CheckAvailabilityAsync(toolIds);
         
         return JsonSerializer.Serialize(availability);
     }
 
     private async Task<string> GetUsageInstructions(Dictionary<string, JsonElement> parameters)
     {
+        using var scope = _serviceProvider.CreateScope();
+        var toolService = scope.ServiceProvider.GetRequiredService<IToolService>();
+
         var toolId = Guid.Parse(parameters["tool_id"].GetString());
-        var instructions = await _toolService.GetInstructionsAsync(toolId);
+        var instructions = await toolService.GetInstructionsAsync(toolId);
         
         return JsonSerializer.Serialize(instructions);
     }
 
     private async Task<string> CompareTools(Dictionary<string, JsonElement> parameters)
     {
+        using var scope = _serviceProvider.CreateScope();
+        var toolService = scope.ServiceProvider.GetRequiredService<IToolService>();
+
         var toolIds = parameters["tool_ids"]
             .EnumerateArray()
             .Select(e => Guid.Parse(e.GetString()))
             .ToList();
 
-        var tools = await _toolService.GetToolsByIdsAsync(toolIds);
+        var tools = await toolService.GetToolsByIdsAsync(toolIds);
         
         var comparison = tools.Select(t => new
         {
