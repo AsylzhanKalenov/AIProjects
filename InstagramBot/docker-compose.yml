@@ -21,10 +21,10 @@ services:
     container_name: instagram_bot_app
     restart: always
     environment:
-      - ConnectionStrings__DefaultConnection=Host=db;Port=5432;Database=instagram_db;Username=bot_user;Password=bot_password
+      - ConnectionStrings__DefaultConnection=Host=localhost;Port=5432;Database=instagram_db;Username=bot_user;Password=bot_password
       - ASPNETCORE_URLS=http://+:5000
     ports:
-      - "80:5000"
+      - "5080:5000"
     depends_on:
       - db
 

@@ -49,8 +49,34 @@ var app = builder.Build();
 // Auto-migrate database
 using (var scope = app.Services.CreateScope())
 {
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.Migrate();
+    var services = scope.ServiceProvider;
+    var logger = services.GetRequiredService<ILogger<Program>>();
+    try
+    {
+        var db = services.GetRequiredService<AppDbContext>();
+        
+        // Простая логика повторов: пробуем 5 раз с паузой в 2 секунды
+        int retries = 5;
+        while (retries > 0)
+        {
+            try
+            {
+                db.Database.Migrate();
+                logger.LogInformation("Database migrated successfully.");
+                break;
+            }
+            catch (Exception ex) when (retries > 0)
+            {
+                retries--;
+                logger.LogWarning($"Database not ready, retrying... ({retries} attempts left)");
+                Thread.Sleep(2000);
+            }
+        }
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "An error occurred while migrating the database.");
+    }
 }
 
 // Swagger (always enabled for easy API access)
