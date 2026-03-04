@@ -1,7 +1,7 @@
-using Refit;
 using InstagramBot.Models;
+using Refit;
 
-namespace InstagramBot.Services;
+namespace InstagramBot.Interfaces;
 
 /// <summary>
 /// Instagram Graph API client (via Refit)

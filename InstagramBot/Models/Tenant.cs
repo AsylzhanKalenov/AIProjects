@@ -1,7 +1,8 @@
 namespace InstagramBot.Models;
 
 /// <summary>
-/// Represents a business client (tenant) using the chatbot platform
+/// Represents a business client (tenant) using the chatbot platform.
+/// A tenant can have multiple channels (Instagram, WhatsApp, etc.)
 /// </summary>
 public class Tenant
 {
@@ -13,23 +14,26 @@ public class Tenant
     public string BusinessName { get; set; } = string.Empty;
     
     /// <summary>
-    /// Instagram Business Account ID (received from Meta)
+    /// [DEPRECATED - use Channel.ExternalId] Instagram Business Account ID
+    /// Kept for backward compatibility during migration
     /// </summary>
     public string InstagramPageId { get; set; } = string.Empty;
     
     /// <summary>
-    /// Long-lived Page Access Token from Meta
+    /// [DEPRECATED - use Channel.AccessToken] Long-lived Page Access Token
+    /// Kept for backward compatibility during migration
     /// </summary>
     public string AccessToken { get; set; } = string.Empty;
     
     /// <summary>
     /// System prompt for AI (describes bot personality and role)
-    /// Example: "Ты дружелюбный консультант магазина обуви..."
+    /// Shared across all channels for this tenant
     /// </summary>
     public string SystemPrompt { get; set; } = string.Empty;
     
     /// <summary>
     /// Knowledge base content (FAQ, products, prices, etc.)
+    /// Shared across all channels for this tenant
     /// </summary>
     public string KnowledgeBase { get; set; } = string.Empty;
     
@@ -49,12 +53,12 @@ public class Tenant
     public bool IsActive { get; set; } = true;
     
     /// <summary>
-    /// Monthly message limit
+    /// Monthly message limit (across all channels)
     /// </summary>
     public int MonthlyMessageLimit { get; set; } = 1000;
     
     /// <summary>
-    /// Current month message count
+    /// Current month message count (across all channels)
     /// </summary>
     public int CurrentMonthMessages { get; set; }
     
@@ -62,11 +66,12 @@ public class Tenant
     public DateTime? UpdatedAt { get; set; }
     
     // Navigation
+    public ICollection<Channel> Channels { get; set; } = [];
     public ICollection<Conversation> Conversations { get; set; } = [];
 }
 
 /// <summary>
-/// Represents a conversation with a user
+/// Represents a conversation with a user on a specific channel
 /// </summary>
 public class Conversation
 {
@@ -74,12 +79,19 @@ public class Conversation
     public Guid TenantId { get; set; }
     
     /// <summary>
-    /// Instagram User ID (sender)
+    /// Channel this conversation belongs to (nullable for backward compat)
+    /// </summary>
+    public Guid? ChannelId { get; set; }
+    
+    /// <summary>
+    /// External user identifier:
+    /// - Instagram: Instagram User ID (IGSID)
+    /// - WhatsApp: Phone number (e.g. "77771234567")
     /// </summary>
     public string InstagramUserId { get; set; } = string.Empty;
     
     /// <summary>
-    /// User's name if available
+    /// User's display name if available
     /// </summary>
     public string? UserName { get; set; }
     
@@ -88,6 +100,7 @@ public class Conversation
     
     // Navigation
     public Tenant Tenant { get; set; } = null!;
+    public Channel? Channel { get; set; }
     public ICollection<Message> Messages { get; set; } = [];
 }
 
@@ -107,7 +120,9 @@ public class Message
     public string Content { get; set; } = string.Empty;
     
     /// <summary>
-    /// Instagram message ID
+    /// External message ID:
+    /// - Instagram: mid.xxx
+    /// - WhatsApp: wamid.xxx
     /// </summary>
     public string? InstagramMessageId { get; set; }
     

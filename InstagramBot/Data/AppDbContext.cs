@@ -10,6 +10,7 @@ public class AppDbContext : DbContext
     }
 
     public DbSet<Tenant> Tenants => Set<Tenant>();
+    public DbSet<Channel> Channels => Set<Channel>();
     public DbSet<Conversation> Conversations => Set<Conversation>();
     public DbSet<Message> Messages => Set<Message>();
 
@@ -29,11 +30,37 @@ public class AppDbContext : DbContext
             entity.Property(e => e.FallbackMessage).HasMaxLength(1000);
         });
 
+        // Channel
+        modelBuilder.Entity<Channel>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            
+            // Unique: one ExternalId per channel type
+            entity.HasIndex(e => new { e.Type, e.ExternalId }).IsUnique();
+            
+            entity.Property(e => e.DisplayName).HasMaxLength(200);
+            entity.Property(e => e.ExternalId).HasMaxLength(100);
+            entity.Property(e => e.AccessToken).HasMaxLength(500);
+            entity.Property(e => e.WhatsAppBusinessAccountId).HasMaxLength(100);
+            entity.Property(e => e.PhoneNumber).HasMaxLength(50);
+            
+            // Enum stored as string for readability
+            entity.Property(e => e.Type)
+                .HasConversion<string>()
+                .HasMaxLength(50);
+
+            entity.HasOne(e => e.Tenant)
+                .WithMany(t => t.Channels)
+                .HasForeignKey(e => e.TenantId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
         // Conversation
         modelBuilder.Entity<Conversation>(entity =>
         {
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => new { e.TenantId, e.InstagramUserId });
+            entity.HasIndex(e => new { e.ChannelId, e.InstagramUserId });
             entity.Property(e => e.InstagramUserId).HasMaxLength(100);
             entity.Property(e => e.UserName).HasMaxLength(200);
             
@@ -41,6 +68,11 @@ public class AppDbContext : DbContext
                 .WithMany(t => t.Conversations)
                 .HasForeignKey(e => e.TenantId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.Channel)
+                .WithMany(c => c.Conversations)
+                .HasForeignKey(e => e.ChannelId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         // Message
@@ -56,10 +88,12 @@ public class AppDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
-        // Seed demo tenant for testing
+        // Seed demo tenant
+        var demoTenantId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        
         modelBuilder.Entity<Tenant>().HasData(new Tenant
         {
-            Id = Guid.Parse("11111111-1111-1111-1111-111111111111"),
+            Id = demoTenantId,
             BusinessName = "Demo Shop",
             InstagramPageId = "REPLACE_WITH_YOUR_PAGE_ID",
             AccessToken = "REPLACE_WITH_YOUR_ACCESS_TOKEN",
@@ -79,6 +113,21 @@ public class AppDbContext : DbContext
             FallbackMessage = "Извините, я не понял ваш вопрос. Попробуйте переформулировать или свяжитесь с менеджером.",
             IsActive = true,
             MonthlyMessageLimit = 1000,
+            CreatedAt = DateTime.UtcNow
+        });
+
+        // Seed demo WhatsApp channel
+        modelBuilder.Entity<Channel>().HasData(new Channel
+        {
+            Id = Guid.Parse("22222222-2222-2222-2222-222222222222"),
+            TenantId = demoTenantId,
+            Type = ChannelType.WhatsApp,
+            DisplayName = "Demo WhatsApp",
+            ExternalId = "REPLACE_WITH_PHONE_NUMBER_ID",
+            AccessToken = "REPLACE_WITH_WHATSAPP_TOKEN",
+            WhatsAppBusinessAccountId = "REPLACE_WITH_WABA_ID",
+            PhoneNumber = "+7 777 000 0000",
+            IsActive = true,
             CreatedAt = DateTime.UtcNow
         });
     }

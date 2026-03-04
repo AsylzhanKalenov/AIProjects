@@ -1,8 +1,10 @@
-using Microsoft.EntityFrameworkCore;
 using InstagramBot.Data;
+using InstagramBot.Interfaces;
 using InstagramBot.Models;
+using InstagramBot.Services;
+using Microsoft.EntityFrameworkCore;
 
-namespace InstagramBot.Services;
+namespace InstagramBot.Handler;
 
 public interface IMessageHandler
 {

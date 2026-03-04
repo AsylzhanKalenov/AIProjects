@@ -1,22 +1,21 @@
-using InstagramBot.Handler;
 using Microsoft.AspNetCore.Mvc;
-using InstagramBot.Models;
+using InstagramBot.Models.WhatsApp;
 using InstagramBot.Services;
 
 namespace InstagramBot.Controllers;
 
 [ApiController]
 [Route("api/webhooks")]
-public class WebhookController : ControllerBase
+public class WhatsAppWebhookController : ControllerBase
 {
-    private readonly IMessageHandler _handler;
+    private readonly IWhatsAppMessageHandler _handler;
     private readonly IConfiguration _config;
-    private readonly ILogger<WebhookController> _logger;
+    private readonly ILogger<WhatsAppWebhookController> _logger;
 
-    public WebhookController(
-        IMessageHandler handler,
+    public WhatsAppWebhookController(
+        IWhatsAppMessageHandler handler,
         IConfiguration config,
-        ILogger<WebhookController> logger)
+        ILogger<WhatsAppWebhookController> logger)
     {
         _handler = handler;
         _config = config;
@@ -24,39 +23,40 @@ public class WebhookController : ControllerBase
     }
 
     /// <summary>
-    /// Webhook verification endpoint (called by Meta when setting up webhook)
+    /// WhatsApp webhook verification (called by Meta during webhook setup)
     /// </summary>
-    [HttpGet("instagram")]
+    [HttpGet("whatsapp")]
     public IActionResult Verify(
         [FromQuery(Name = "hub.mode")] string? mode,
         [FromQuery(Name = "hub.verify_token")] string? token,
         [FromQuery(Name = "hub.challenge")] string? challenge)
     {
-        _logger.LogInformation("Webhook verification request: mode={Mode}", mode);
+        _logger.LogInformation("WhatsApp webhook verification: mode={Mode}", mode);
 
+        // Uses the same verify token as Instagram (can be separated if needed)
         var verifyToken = _config["Meta:VerifyToken"];
 
         if (mode == "subscribe" && token == verifyToken)
         {
-            _logger.LogInformation("Webhook verified successfully");
+            _logger.LogInformation("WhatsApp webhook verified successfully");
             return Ok(challenge);
         }
 
-        _logger.LogWarning("Webhook verification failed: invalid token");
+        _logger.LogWarning("WhatsApp webhook verification failed");
         return Forbid();
     }
 
     /// <summary>
-    /// Incoming messages endpoint
+    /// Incoming WhatsApp messages endpoint
     /// </summary>
-    [HttpPost("instagram")]
-    public IActionResult HandleMessage([FromBody] WebhookPayload payload)
+    [HttpPost("whatsapp")]
+    public IActionResult HandleMessage([FromBody] WhatsAppWebhookPayload payload)
     {
         _logger.LogInformation(
-            "Received webhook: object={Object}, entries={Count}",
+            "Received WhatsApp webhook: object={Object}, entries={Count}",
             payload.Object, payload.Entry?.Count ?? 0);
 
-        // Meta expects quick response, process asynchronously
+        // Meta expects quick 200 response, process asynchronously
         _ = Task.Run(async () =>
         {
             try
@@ -65,11 +65,10 @@ public class WebhookController : ControllerBase
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing webhook payload");
+                _logger.LogError(ex, "Error processing WhatsApp webhook payload");
             }
         });
 
-        // Always return OK quickly to Meta
         return Ok();
     }
 }
