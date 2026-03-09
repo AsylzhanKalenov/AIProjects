@@ -21,7 +21,7 @@ public class OpenAIController : Controller
     
     
     [HttpPost("test")]
-    public async Task<IActionResult> Verify(string message)
+    public async Task<IActionResult> Verify([FromBody]string message)
     {
         var tenant = _dbContext.Tenants.FirstOrDefault(x => x.Id == Guid.Parse("11111111-1111-1111-1111-111111111111"));
         

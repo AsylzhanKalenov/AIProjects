@@ -34,16 +34,16 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<Channel>(entity =>
         {
             entity.HasKey(e => e.Id);
-            
+
             // Unique: one ExternalId per channel type
             entity.HasIndex(e => new { e.Type, e.ExternalId }).IsUnique();
-            
+
             entity.Property(e => e.DisplayName).HasMaxLength(200);
             entity.Property(e => e.ExternalId).HasMaxLength(100);
             entity.Property(e => e.AccessToken).HasMaxLength(500);
             entity.Property(e => e.WhatsAppBusinessAccountId).HasMaxLength(100);
             entity.Property(e => e.PhoneNumber).HasMaxLength(50);
-            
+
             // Enum stored as string for readability
             entity.Property(e => e.Type)
                 .HasConversion<string>()
@@ -63,7 +63,7 @@ public class AppDbContext : DbContext
             entity.HasIndex(e => new { e.ChannelId, e.InstagramUserId });
             entity.Property(e => e.InstagramUserId).HasMaxLength(100);
             entity.Property(e => e.UserName).HasMaxLength(200);
-            
+
             entity.HasOne(e => e.Tenant)
                 .WithMany(t => t.Conversations)
                 .HasForeignKey(e => e.TenantId)
@@ -81,7 +81,7 @@ public class AppDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.ConversationId);
             entity.Property(e => e.InstagramMessageId).HasMaxLength(200);
-            
+
             entity.HasOne(e => e.Conversation)
                 .WithMany(c => c.Messages)
                 .HasForeignKey(e => e.ConversationId)
@@ -90,7 +90,8 @@ public class AppDbContext : DbContext
 
         // Seed demo tenant
         var demoTenantId = Guid.Parse("11111111-1111-1111-1111-111111111111");
-        
+        var demoCreatedAtUtc = new DateTime(2026, 01, 01, 0, 0, 0, DateTimeKind.Utc);
+
         modelBuilder.Entity<Tenant>().HasData(new Tenant
         {
             Id = demoTenantId,
@@ -113,7 +114,7 @@ public class AppDbContext : DbContext
             FallbackMessage = "Извините, я не понял ваш вопрос. Попробуйте переформулировать или свяжитесь с менеджером.",
             IsActive = true,
             MonthlyMessageLimit = 1000,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = demoCreatedAtUtc
         });
 
         // Seed demo WhatsApp channel
@@ -128,7 +129,7 @@ public class AppDbContext : DbContext
             WhatsAppBusinessAccountId = "REPLACE_WITH_WABA_ID",
             PhoneNumber = "+7 777 000 0000",
             IsActive = true,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = demoCreatedAtUtc
         });
     }
 }

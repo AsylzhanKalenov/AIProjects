@@ -1,19 +1,6 @@
 version: '3.8'
 
 services:
-  db:
-    image: postgres:16
-    container_name: instagram_bot_db
-    restart: always
-    environment:
-      POSTGRES_USER: bot_user
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: instagram_db
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-
   app:
     build:
       context: .
@@ -21,15 +8,13 @@ services:
     container_name: instagram_bot_app
     restart: always
     environment:
-      - ConnectionStrings__DefaultConnection=Host=db;Port=5432;Database=instagram_db;Username=bot_user;Password=${DB_PASSWORD}
+      - ConnectionStrings__DefaultConnection=Host=f2ee5859bb86ae6d95948e74.twc1.net;Port=5432;Database=ai_assist_db;Username=${DB_USER};Password=${DB_PASSWORD}
       - ASPNETCORE_URLS=http://+:5000
       - Meta__VerifyToken=${META_VERIFY_TOKEN}
       - OpenAI__ApiKey=${OPENAI_API_KEY}
       - OpenAI__Model=gpt-4o-mini
     ports:
       - "5080:5000"
-    depends_on:
-      - db
 
 volumes:
   postgres_data:
