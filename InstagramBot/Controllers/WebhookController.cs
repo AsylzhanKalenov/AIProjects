@@ -10,16 +10,16 @@ namespace InstagramBot.Controllers;
 [Route("api/webhooks")]
 public class WebhookController : ControllerBase
 {
-    private readonly IMessageHandler _handler;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly IConfiguration _config;
     private readonly ILogger<WebhookController> _logger;
 
     public WebhookController(
-        IMessageHandler handler,
+        IServiceScopeFactory scopeFactory,
         IConfiguration config,
         ILogger<WebhookController> logger)
     {
-        _handler = handler;
+        _scopeFactory = scopeFactory;
         _config = config;
         _logger = logger;
     }
@@ -65,7 +65,9 @@ public class WebhookController : ControllerBase
         {
             try
             {
-                await _handler.ProcessAsync(payload);
+                using var scope = _scopeFactory.CreateScope();
+                var handler = scope.ServiceProvider.GetRequiredService<IMessageHandler>();
+                await handler.ProcessAsync(payload);
             }
             catch (Exception ex)
             {
