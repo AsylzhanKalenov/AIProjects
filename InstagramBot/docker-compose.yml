@@ -11,6 +11,9 @@ services:
       - ConnectionStrings__DefaultConnection=Host=f2ee5859bb86ae6d95948e74.twc1.net;Port=5432;Database=ai_assist_db;Username=${DB_USER};Password=${DB_PASSWORD}
       - ASPNETCORE_URLS=http://+:5000
       - Meta__VerifyToken=${META_VERIFY_TOKEN}
+      - Meta__AppId=${META_APP_ID}
+      - Meta__AppSecret=${META_APP_SECRET}
+      - Meta__RedirectUri=https://mybot.kz/auth/instagram/callback
       - OpenAI__ApiKey=${OPENAI_API_KEY}
       - OpenAI__Model=gpt-4o-mini
     ports:
