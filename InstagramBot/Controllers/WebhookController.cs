@@ -1,3 +1,4 @@
+using System.Text.Json;
 using InstagramBot.Handler;
 using Microsoft.AspNetCore.Mvc;
 using InstagramBot.Models;
@@ -56,6 +57,9 @@ public class WebhookController : ControllerBase
             "Received webhook: object={Object}, entries={Count}",
             payload.Object, payload.Entry?.Count ?? 0);
 
+        _logger.LogInformation("Entry fields: {Payload}", 
+            JsonSerializer.Serialize(payload.Entry));
+        
         // Meta expects quick response, process asynchronously
         _ = Task.Run(async () =>
         {
