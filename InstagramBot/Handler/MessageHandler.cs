@@ -66,22 +66,77 @@ public class MessageHandler : IMessageHandler
 
         foreach (var messaging in entry.Messaging ?? [])
         {
-            await ProcessMessageAsync(tenant, messaging);
+            // ── Skip non-message events (read receipts, reactions, referrals) ──
+            if (messaging.Read != null)
+            {
+                _logger.LogDebug("Skipping read receipt for message: {Mid}", messaging.Read.Mid);
+                continue;
+            }
+
+            if (messaging.Reaction != null)
+            {
+                _logger.LogDebug(
+                    "Skipping reaction event: {Action} on message {Mid}",
+                    messaging.Reaction.Action, messaging.Reaction.Mid);
+                continue;
+            }
+
+            // ── Handle postback (Icebreaker / Generic Template button) ──
+            if (messaging.Postback != null)
+            {
+                await ProcessPostbackAsync(tenant, messaging);
+                continue;
+            }
+
+            // ── Handle regular message ──
+            if (messaging.Message != null)
+            {
+                await ProcessMessageAsync(tenant, messaging);
+            }
         }
     }
 
     private async Task ProcessMessageAsync(Tenant tenant, MessagingEvent messaging)
     {
-        // Skip if no text message
-        var userText = messaging.Message?.Text;
+        var message = messaging.Message!;
+
+        // ── Filter: echo (our own outgoing message reflected back) ──
+        if (message.IsEcho == true)
+        {
+            _logger.LogDebug("Skipping echo message: {Mid}", message.Mid);
+            return;
+        }
+
+        // ── Filter: deleted message ──
+        if (message.IsDeleted == true)
+        {
+            _logger.LogDebug("Skipping deleted message: {Mid}", message.Mid);
+            return;
+        }
+
+        // ── Filter: unsupported media ──
+        if (message.IsUnsupported == true)
+        {
+            _logger.LogDebug("Skipping unsupported message: {Mid}", message.Mid);
+            // Optionally notify the user
+            await SendInstagramMessageAsync(
+                tenant.AccessToken,
+                messaging.Sender.Id,
+                "К сожалению, этот тип сообщения не поддерживается. Пожалуйста, отправьте текст.");
+            return;
+        }
+
+        // ── Extract text content ──
+        var userText = ExtractTextContent(message);
+
         if (string.IsNullOrWhiteSpace(userText))
         {
-            _logger.LogDebug("Skipping non-text message");
+            _logger.LogDebug("Skipping message with no extractable text: {Mid}", message.Mid);
             return;
         }
 
         var senderId = messaging.Sender.Id;
-        
+
         _logger.LogInformation(
             "Processing message from {SenderId} to tenant {TenantName}: {Text}",
             senderId, tenant.BusinessName, userText.Length > 50 ? userText[..50] + "..." : userText);
@@ -92,7 +147,7 @@ public class MessageHandler : IMessageHandler
             var conversation = await GetOrCreateConversationAsync(tenant.Id, senderId);
 
             // Save incoming message
-            await SaveMessageAsync(conversation.Id, userText, isFromUser: true, messaging.Message?.Mid);
+            await SaveMessageAsync(conversation.Id, userText, isFromUser: true, message.Mid);
 
             // Get conversation history for context
             var history = await GetConversationHistoryAsync(conversation.Id);
@@ -128,6 +183,95 @@ public class MessageHandler : IMessageHandler
             _logger.LogError(ex, "Error processing message for tenant {TenantId}", tenant.Id);
         }
     }
+
+    /// <summary>
+    /// Handle postback events (Icebreaker selections, Generic Template buttons)
+    /// </summary>
+    private async Task ProcessPostbackAsync(Tenant tenant, MessagingEvent messaging)
+    {
+        var postback = messaging.Postback!;
+        var senderId = messaging.Sender.Id;
+
+        _logger.LogInformation(
+            "Processing postback from {SenderId}: title='{Title}', payload='{Payload}'",
+            senderId, postback.Title, postback.Payload);
+
+        try
+        {
+            var conversation = await GetOrCreateConversationAsync(tenant.Id, senderId);
+
+            // Save the postback as a user message (use the title as visible text)
+            await SaveMessageAsync(conversation.Id, postback.Title, isFromUser: true, postback.Mid);
+
+            var history = await GetConversationHistoryAsync(conversation.Id);
+
+            // Use the postback title as the user's "message" for AI
+            var aiResponse = await _openAi.GetResponseAsync(
+                tenant.SystemPrompt,
+                tenant.KnowledgeBase,
+                postback.Title,
+                history);
+
+            var sendResult = await SendInstagramMessageAsync(tenant.AccessToken, senderId, aiResponse);
+
+            if (sendResult.Error != null)
+            {
+                _logger.LogError(
+                    "Failed to send postback response: {Error} (Code: {Code})",
+                    sendResult.Error.Message, sendResult.Error.Code);
+                return;
+            }
+
+            await SaveMessageAsync(conversation.Id, aiResponse, isFromUser: false, sendResult.MessageId);
+            await IncrementMessageCountAsync(tenant.Id);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing postback for tenant {TenantId}", tenant.Id);
+        }
+    }
+
+    /// <summary>
+    /// Extract text from various Instagram message types
+    /// </summary>
+    private string? ExtractTextContent(IncomingMessage message)
+    {
+        // Text message
+        if (!string.IsNullOrWhiteSpace(message.Text))
+            return message.Text;
+
+        // Quick reply
+        if (message.QuickReply != null)
+            return message.QuickReply.Payload;
+
+        // Story reply — use text if present alongside the story attachment
+        if (message.ReplyTo?.Story != null)
+            return message.Text ?? "[Ответ на историю]";
+
+        // Attachments
+        if (message.Attachments is { Count: > 0 })
+        {
+            var firstAttachment = message.Attachments[0];
+            return firstAttachment.Type switch
+            {
+                "image" => "[Изображение]",
+                "video" => "[Видео]",
+                "audio" => "[Аудио]",
+                "file" => "[Файл]",
+                "share" => "[Поделился публикацией]",
+                "story_mention" => "[Упоминание в истории]",
+                "ig_reel" or "reel" => "[Reels]",
+                "ephemeral" => null, // Disappearing media — cannot be read
+                _ => $"[Вложение: {firstAttachment.Type}]"
+            };
+        }
+
+        return null;
+    }
+
+    // ============================================================
+    // DATABASE & API METHODS (unchanged logic, kept for completeness)
+    // ============================================================
 
     private async Task<Conversation> GetOrCreateConversationAsync(Guid tenantId, string instagramUserId)
     {
