@@ -51,23 +51,21 @@ public class WebhookController : ControllerBase
     /// Incoming messages endpoint
     /// </summary>
     [HttpPost("instagram")]
-    public IActionResult HandleMessage([FromBody] WebhookPayload payload)
+    public IActionResult HandleMessage([FromBody] JsonElement payload)
     {
-        _logger.LogInformation(
-            "Received webhook: object={Object}, entries={Count}",
-            payload.Object, payload.Entry?.Count ?? 0);
+        var rawJson = payload.ToString();
 
-        _logger.LogInformation("Entry fields: {Payload}", 
-            JsonSerializer.Serialize(payload.Entry));
-        
+        _logger.LogInformation("Received webhook payload: {Payload}", rawJson);
         // Meta expects quick response, process asynchronously
         _ = Task.Run(async () =>
         {
             try
             {
+                WebhookPayload payloadd =  JsonSerializer.Deserialize<WebhookPayload>(rawJson);
+                
                 using var scope = _scopeFactory.CreateScope();
                 var handler = scope.ServiceProvider.GetRequiredService<IMessageHandler>();
-                await handler.ProcessAsync(payload);
+                await handler.ProcessAsync(payloadd);
             }
             catch (Exception ex)
             {
