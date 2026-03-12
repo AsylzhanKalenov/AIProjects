@@ -11,7 +11,7 @@ public interface IInstagramApi
     /// <summary>
     /// Send a message to a user
     /// </summary>
-    [Post("/v21.0/me/messages")]
+    [Post("/v25.0/me/messages")]
     Task<SendMessageResponse> SendMessageAsync(
         [Query] string access_token,
         [Body] SendMessageRequest request);
@@ -19,7 +19,7 @@ public interface IInstagramApi
     /// <summary>
     /// Get user profile info
     /// </summary>
-    [Get("/v21.0/{userId}")]
+    [Get("/v25.0/{userId}")]
     Task<UserProfile> GetUserProfileAsync(
         string userId,
         [Query] string fields,

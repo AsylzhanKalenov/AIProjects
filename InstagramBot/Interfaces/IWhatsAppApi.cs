@@ -13,7 +13,7 @@ public interface IWhatsAppApi
     /// Send a message (text, media, template, interactive)
     /// POST /{phone_number_id}/messages
     /// </summary>
-    [Post("/v21.0/{phoneNumberId}/messages")]
+    [Post("/v25.0/{phoneNumberId}/messages")]
     Task<WhatsAppSendResponse> SendMessageAsync(
         string phoneNumberId,
         [Query] string access_token,
@@ -23,7 +23,7 @@ public interface IWhatsAppApi
     /// Get media URL by media ID (to download user-sent media)
     /// GET /{media_id}
     /// </summary>
-    [Get("/v21.0/{mediaId}")]
+    [Get("/v25.0/{mediaId}")]
     Task<WhatsAppMediaUrlResponse> GetMediaUrlAsync(
         string mediaId,
         [Query] string access_token);
@@ -32,7 +32,7 @@ public interface IWhatsAppApi
     /// Mark a message as read
     /// POST /{phone_number_id}/messages
     /// </summary>
-    [Post("/v21.0/{phoneNumberId}/messages")]
+    [Post("/v25.0/{phoneNumberId}/messages")]
     Task MarkAsReadAsync(
         string phoneNumberId,
         [Query] string access_token,

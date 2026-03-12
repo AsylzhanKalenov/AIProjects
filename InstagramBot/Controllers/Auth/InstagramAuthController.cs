@@ -11,21 +11,33 @@ public class InstagramAuthController : ControllerBase
     private readonly IConfiguration _config;
     private readonly HttpClient _http;
     private readonly AppDbContext _db;
+    private readonly ILogger<InstagramAuthController> _logger;
+
+    public InstagramAuthController(IConfiguration config, HttpClient http, AppDbContext db, ILogger<InstagramAuthController> logger)
+    {
+        _config = config;
+        _http = http;
+        _db = db;
+        _logger = logger;
+    }
 
     // Шаг 1: Клиент нажимает "Подключить" → редирект на Facebook
     [HttpGet("instagram/connect")]
     public IActionResult Connect([FromQuery] Guid tenantId)
     {
+        _logger.LogInformation("Auth connect request: tenantId={TenantId}", tenantId);
+        
         var appId = _config["Meta:AppId"];
         var redirectUri = _config["Meta:RedirectUri"]; 
         // например: https://mybot.kz/auth/instagram/callback
 
-        var url = $"https://www.facebook.com/v21.0/dialog/oauth"
-            + $"?client_id={appId}"
-            + $"&redirect_uri={Uri.EscapeDataString(redirectUri)}"
-            + $"&scope=instagram_manage_messages,pages_manage_metadata,pages_messaging"
-            + $"&state={tenantId}"  // чтобы знать для какого тенанта
-            + $"&response_type=code";
+        var url = $"https://www.facebook.com/v25.0/dialog/oauth"
+                  + $"?client_id={appId}"
+                  + $"&redirect_uri={Uri.EscapeDataString(redirectUri)}"
+                  + $"&scope=instagram_basic,instagram_manage_messages,"
+                  + "pages_manage_metadata,pages_read_engagement,pages_show_list"
+                  + $"&state={tenantId}"
+                  + $"&response_type=code";
 
         return Redirect(url);
     }
@@ -36,12 +48,15 @@ public class InstagramAuthController : ControllerBase
         [FromQuery] string code,
         [FromQuery] Guid state) // state = tenantId
     {
+        
+        _logger.LogInformation("Auth callback request: code={code}, state={state}", code, state);
+        
         var appId = _config["Meta:AppId"];
         var appSecret = _config["Meta:AppSecret"];
         var redirectUri = _config["Meta:RedirectUri"];
 
         // Обмениваем code → short-lived token
-        var tokenUrl = $"https://graph.facebook.com/v21.0/oauth/access_token"
+        var tokenUrl = $"https://graph.facebook.com/v25.0/oauth/access_token"
             + $"?client_id={appId}"
             + $"&client_secret={appSecret}"
             + $"&redirect_uri={Uri.EscapeDataString(redirectUri)}"
@@ -50,7 +65,7 @@ public class InstagramAuthController : ControllerBase
         var tokenResp = await _http.GetFromJsonAsync<TokenResponse>(tokenUrl);
 
         // Обмениваем → long-lived token
-        var longLivedUrl = $"https://graph.facebook.com/v21.0/oauth/access_token"
+        var longLivedUrl = $"https://graph.facebook.com/v25.0/oauth/access_token"
             + $"?grant_type=fb_exchange_token"
             + $"&client_id={appId}"
             + $"&client_secret={appSecret}"
@@ -59,7 +74,7 @@ public class InstagramAuthController : ControllerBase
         var longLived = await _http.GetFromJsonAsync<TokenResponse>(longLivedUrl);
 
         // Получаем список страниц клиента
-        var pagesUrl = $"https://graph.facebook.com/v21.0/me/accounts"
+        var pagesUrl = $"https://graph.facebook.com/v25.0/me/accounts"
             + $"?access_token={longLived.AccessToken}";
 
         var pages = await _http.GetFromJsonAsync<PagesResponse>(pagesUrl);
@@ -73,7 +88,7 @@ public class InstagramAuthController : ControllerBase
 
         // Подписываем страницу на вебхуки
         await _http.PostAsync(
-            $"https://graph.facebook.com/v21.0/{page.Id}/subscribed_apps"
+            $"https://graph.facebook.com/v25.0/{page.Id}/subscribed_apps"
             + $"?subscribed_fields=messages,messaging_postbacks"
             + $"&access_token={page.AccessToken}", null);
 
