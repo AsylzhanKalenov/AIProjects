@@ -13,7 +13,7 @@ services:
       - Meta__VerifyToken=${META_VERIFY_TOKEN}
       - Meta__AppId=${META_APP_ID}
       - Meta__AppSecret=${META_APP_SECRET}
-      - Meta__RedirectUri=https://mybot.kz/auth/instagram/callback
+      - Meta__RedirectUri=https://insta-ai-bot.ru/auth/instagram/callback
       - OpenAI__ApiKey=${OPENAI_API_KEY}
       - OpenAI__Model=gpt-4o-mini
     ports:
