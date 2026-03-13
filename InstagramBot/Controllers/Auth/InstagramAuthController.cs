@@ -35,7 +35,9 @@ public class InstagramAuthController : ControllerBase
 
         var appId = _config["Meta:AppId"];
         var redirectUri = _config["Meta:RedirectUri"];
-
+        
+        _logger.LogInformation("appId: {appId} redirectUri: {redirectUri}", appId, redirectUri);
+        
         var url = $"https://www.facebook.com/v25.0/dialog/oauth"
                   + $"?client_id={appId}"
                   + $"&redirect_uri={Uri.EscapeDataString(redirectUri!)}"
@@ -43,7 +45,9 @@ public class InstagramAuthController : ControllerBase
                   + "pages_manage_metadata,pages_messaging,pages_show_list"
                   + $"&state={tenantId}"
                   + $"&response_type=code";
-
+        
+        _logger.LogInformation("Generated uri: {url}", url);
+        
         return Redirect(url);
     }
 
