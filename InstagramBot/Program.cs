@@ -27,7 +27,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 // Instagram API (Refit)
 builder.Services
     .AddRefitClient<IInstagramApi>()
-    .ConfigureHttpClient(c => c.BaseAddress = new Uri("https://graph.facebook.com"));
+    .ConfigureHttpClient(c => c.BaseAddress = new Uri("https://graph.instagram.com"));
 
 // WhatsApp API (Refit) — same base URL as Instagram (Meta Graph API)
 builder.Services
@@ -36,6 +36,10 @@ builder.Services
 
 // OpenAI
 builder.Services.AddHttpClient<IOpenAiService, OpenAiService>();
+
+builder.Services.AddHttpClient();
+
+builder.Services.AddHostedService<TokenRefreshService>();
 
 // Message Handlers
 builder.Services.AddScoped<IMessageHandler, MessageHandler>();

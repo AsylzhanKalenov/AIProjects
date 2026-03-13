@@ -8,7 +8,6 @@ public enum ChannelType
     Instagram = 0,
     WhatsApp = 1
     // Telegram = 2,  // Future
-    // FacebookMessenger = 3  // Future
 }
 
 /// <summary>
@@ -29,17 +28,23 @@ public class Channel
     
     /// <summary>
     /// Channel-specific external ID:
-    /// - Instagram: Instagram Business Account ID (Page ID)
+    /// - Instagram: Instagram-scoped User ID (IG User ID)
     /// - WhatsApp: Phone Number ID
     /// </summary>
     public string ExternalId { get; set; } = string.Empty;
     
     /// <summary>
-    /// Access token for the channel API
-    /// - Instagram: Page Access Token
-    /// - WhatsApp: Permanent/System User Token
+    /// Access token for the channel API:
+    /// - Instagram: Long-lived Instagram User Token (expires in 60 days!)
+    /// - WhatsApp: Permanent System User Token
     /// </summary>
     public string AccessToken { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// When the access token expires (Instagram tokens expire in 60 days).
+    /// Null for tokens that don't expire (WhatsApp).
+    /// </summary>
+    public DateTime? TokenExpiresAt { get; set; }
     
     /// <summary>
     /// WhatsApp Business Account ID (only for WhatsApp channels)

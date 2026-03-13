@@ -11,6 +11,14 @@ public interface IMessageHandler
     Task ProcessAsync(WebhookPayload payload);
 }
 
+/// <summary>
+/// Handles incoming Instagram messages.
+/// 
+/// Updated for Instagram Login approach:
+///   - Looks up Channel by ExternalId (IG User ID), not Tenant.InstagramPageId
+///   - Sends messages via graph.instagram.com with Bearer token
+///   - Entry.Id in webhook = Instagram professional account ID = Channel.ExternalId
+/// </summary>
 public class MessageHandler : IMessageHandler
 {
     private readonly IInstagramApi _instagram;
@@ -46,14 +54,27 @@ public class MessageHandler : IMessageHandler
 
     private async Task ProcessEntryAsync(Entry entry)
     {
-        // Find tenant by Instagram Page ID
-        var tenant = await _db.Tenants
-            .AsNoTracking()
-            .FirstOrDefaultAsync(t => t.InstagramPageId == entry.Id && t.IsActive);
+        // entry.Id = Instagram professional account ID (IG User ID)
+        // This matches Channel.ExternalId for Instagram channels
+        var channel = await _db.Channels
+            .Include(c => c.Tenant)
+            .FirstOrDefaultAsync(c =>
+                c.ExternalId == entry.Id &&
+                c.Type == ChannelType.Instagram &&
+                c.IsActive);
 
-        if (tenant == null)
+        if (channel == null)
         {
-            _logger.LogWarning("No active tenant found for Instagram Page ID: {PageId}", entry.Id);
+            _logger.LogWarning(
+                "No active Instagram channel found for IG User ID: {IgUserId}", entry.Id);
+            return;
+        }
+
+        var tenant = channel.Tenant;
+
+        if (!tenant.IsActive)
+        {
+            _logger.LogWarning("Tenant {TenantId} is inactive", tenant.Id);
             return;
         }
 
@@ -64,119 +85,96 @@ public class MessageHandler : IMessageHandler
             return;
         }
 
+        // Check token expiry
+        if (channel.TokenExpiresAt.HasValue && channel.TokenExpiresAt.Value < DateTime.UtcNow)
+        {
+            _logger.LogError(
+                "Instagram token expired for channel {ChannelId} (expired {ExpiredAt}). " +
+                "Client needs to re-authorize.",
+                channel.Id, channel.TokenExpiresAt);
+            return;
+        }
+
         foreach (var messaging in entry.Messaging ?? [])
         {
-            // ── Skip non-message events (read receipts, reactions, referrals) ──
+            // Skip non-message events
             if (messaging.Read != null)
             {
-                _logger.LogDebug("Skipping read receipt for message: {Mid}", messaging.Read.Mid);
+                _logger.LogDebug("Skipping read receipt: {Mid}", messaging.Read.Mid);
                 continue;
             }
 
             if (messaging.Reaction != null)
             {
-                _logger.LogDebug(
-                    "Skipping reaction event: {Action} on message {Mid}",
+                _logger.LogDebug("Skipping reaction: {Action} on {Mid}",
                     messaging.Reaction.Action, messaging.Reaction.Mid);
                 continue;
             }
 
-            // ── Handle postback (Icebreaker / Generic Template button) ──
+            // Handle postback (Icebreaker / Generic Template button)
             if (messaging.Postback != null)
             {
-                await ProcessPostbackAsync(tenant, messaging);
+                await ProcessPostbackAsync(tenant, channel, messaging);
                 continue;
             }
 
-            // ── Handle regular message ──
+            // Handle regular message
             if (messaging.Message != null)
             {
-                await ProcessMessageAsync(tenant, messaging);
+                await ProcessMessageAsync(tenant, channel, messaging);
             }
         }
     }
 
-    private async Task ProcessMessageAsync(Tenant tenant, MessagingEvent messaging)
+    private async Task ProcessMessageAsync(Tenant tenant, Channel channel, MessagingEvent messaging)
     {
         var message = messaging.Message!;
 
-        // ── Filter: echo (our own outgoing message reflected back) ──
-        if (message.IsEcho == true)
+        if (message.IsEcho == true || message.IsDeleted == true)
         {
-            _logger.LogDebug("Skipping echo message: {Mid}", message.Mid);
+            _logger.LogDebug("Skipping echo/deleted message: {Mid}", message.Mid);
             return;
         }
 
-        // ── Filter: deleted message ──
-        if (message.IsDeleted == true)
-        {
-            _logger.LogDebug("Skipping deleted message: {Mid}", message.Mid);
-            return;
-        }
-
-        // ── Filter: unsupported media ──
         if (message.IsUnsupported == true)
         {
-            _logger.LogDebug("Skipping unsupported message: {Mid}", message.Mid);
-            // Optionally notify the user
-            await SendInstagramMessageAsync(
-                tenant.AccessToken,
-                messaging.Sender.Id,
+            await SendInstagramMessageAsync(channel, messaging.Sender.Id,
                 "К сожалению, этот тип сообщения не поддерживается. Пожалуйста, отправьте текст.");
             return;
         }
 
-        // ── Extract text content ──
         var userText = ExtractTextContent(message);
-
         if (string.IsNullOrWhiteSpace(userText))
-        {
-            _logger.LogDebug("Skipping message with no extractable text: {Mid}", message.Mid);
             return;
-        }
 
         var senderId = messaging.Sender.Id;
 
         _logger.LogInformation(
             "Processing message from {SenderId} to tenant {TenantName}: {Text}",
-            senderId, tenant.BusinessName, userText.Length > 50 ? userText[..50] + "..." : userText);
+            senderId, tenant.BusinessName,
+            userText.Length > 50 ? userText[..50] + "..." : userText);
 
         try
         {
-            // Get or create conversation
-            var conversation = await GetOrCreateConversationAsync(tenant.Id, senderId);
-
-            // Save incoming message
+            var conversation = await GetOrCreateConversationAsync(tenant.Id, channel.Id, senderId);
             await SaveMessageAsync(conversation.Id, userText, isFromUser: true, message.Mid);
 
-            // Get conversation history for context
             var history = await GetConversationHistoryAsync(conversation.Id);
 
-            // Generate AI response
             var aiResponse = await _openAi.GetResponseAsync(
-                tenant.SystemPrompt,
-                tenant.KnowledgeBase,
-                userText,
-                history);
+                tenant.SystemPrompt, tenant.KnowledgeBase, userText, history);
 
-            // Send response to Instagram
-            var sendResult = await SendInstagramMessageAsync(tenant.AccessToken, senderId, aiResponse);
+            var sendResult = await SendInstagramMessageAsync(channel, senderId, aiResponse);
 
             if (sendResult.Error != null)
             {
-                _logger.LogError(
-                    "Failed to send message: {Error} (Code: {Code})",
+                _logger.LogError("Failed to send message: {Error} (Code: {Code})",
                     sendResult.Error.Message, sendResult.Error.Code);
                 return;
             }
 
-            // Save bot response
             await SaveMessageAsync(conversation.Id, aiResponse, isFromUser: false, sendResult.MessageId);
-
-            // Update message count
             await IncrementMessageCountAsync(tenant.Id);
-
-            _logger.LogInformation("Successfully processed message for tenant {TenantName}", tenant.BusinessName);
         }
         catch (Exception ex)
         {
@@ -184,41 +182,28 @@ public class MessageHandler : IMessageHandler
         }
     }
 
-    /// <summary>
-    /// Handle postback events (Icebreaker selections, Generic Template buttons)
-    /// </summary>
-    private async Task ProcessPostbackAsync(Tenant tenant, MessagingEvent messaging)
+    private async Task ProcessPostbackAsync(Tenant tenant, Channel channel, MessagingEvent messaging)
     {
         var postback = messaging.Postback!;
         var senderId = messaging.Sender.Id;
 
-        _logger.LogInformation(
-            "Processing postback from {SenderId}: title='{Title}', payload='{Payload}'",
-            senderId, postback.Title, postback.Payload);
+        _logger.LogInformation("Processing postback from {SenderId}: '{Title}'", senderId, postback.Title);
 
         try
         {
-            var conversation = await GetOrCreateConversationAsync(tenant.Id, senderId);
-
-            // Save the postback as a user message (use the title as visible text)
+            var conversation = await GetOrCreateConversationAsync(tenant.Id, channel.Id, senderId);
             await SaveMessageAsync(conversation.Id, postback.Title, isFromUser: true, postback.Mid);
 
             var history = await GetConversationHistoryAsync(conversation.Id);
 
-            // Use the postback title as the user's "message" for AI
             var aiResponse = await _openAi.GetResponseAsync(
-                tenant.SystemPrompt,
-                tenant.KnowledgeBase,
-                postback.Title,
-                history);
+                tenant.SystemPrompt, tenant.KnowledgeBase, postback.Title, history);
 
-            var sendResult = await SendInstagramMessageAsync(tenant.AccessToken, senderId, aiResponse);
+            var sendResult = await SendInstagramMessageAsync(channel, senderId, aiResponse);
 
             if (sendResult.Error != null)
             {
-                _logger.LogError(
-                    "Failed to send postback response: {Error} (Code: {Code})",
-                    sendResult.Error.Message, sendResult.Error.Code);
+                _logger.LogError("Failed to send postback response: {Error}", sendResult.Error.Message);
                 return;
             }
 
@@ -231,28 +216,21 @@ public class MessageHandler : IMessageHandler
         }
     }
 
-    /// <summary>
-    /// Extract text from various Instagram message types
-    /// </summary>
     private string? ExtractTextContent(IncomingMessage message)
     {
-        // Text message
         if (!string.IsNullOrWhiteSpace(message.Text))
             return message.Text;
 
-        // Quick reply
         if (message.QuickReply != null)
             return message.QuickReply.Payload;
 
-        // Story reply — use text if present alongside the story attachment
         if (message.ReplyTo?.Story != null)
             return message.Text ?? "[Ответ на историю]";
 
-        // Attachments
         if (message.Attachments is { Count: > 0 })
         {
-            var firstAttachment = message.Attachments[0];
-            return firstAttachment.Type switch
+            var first = message.Attachments[0];
+            return first.Type switch
             {
                 "image" => "[Изображение]",
                 "video" => "[Видео]",
@@ -261,8 +239,8 @@ public class MessageHandler : IMessageHandler
                 "share" => "[Поделился публикацией]",
                 "story_mention" => "[Упоминание в истории]",
                 "ig_reel" or "reel" => "[Reels]",
-                "ephemeral" => null, // Disappearing media — cannot be read
-                _ => $"[Вложение: {firstAttachment.Type}]"
+                "ephemeral" => null,
+                _ => $"[Вложение: {first.Type}]"
             };
         }
 
@@ -270,13 +248,41 @@ public class MessageHandler : IMessageHandler
     }
 
     // ============================================================
-    // DATABASE & API METHODS (unchanged logic, kept for completeness)
+    // API & DB METHODS
     // ============================================================
 
-    private async Task<Conversation> GetOrCreateConversationAsync(Guid tenantId, string instagramUserId)
+    /// <summary>
+    /// Send message via Instagram API (graph.instagram.com).
+    /// Uses Bearer token in Authorization header.
+    /// igUserId = Channel.ExternalId (IG professional account ID).
+    /// </summary>
+    private async Task<SendMessageResponse> SendInstagramMessageAsync(
+        Channel channel, string recipientId, string text)
+    {
+        var request = new SendMessageRequest
+        {
+            Recipient = new MessageRecipient { Id = recipientId },
+            Message = new OutgoingMessage { Text = text },
+            MessagingType = "RESPONSE"
+        };
+
+        // Bearer token format for graph.instagram.com
+        var bearerToken = $"Bearer {channel.AccessToken}";
+
+        return await _instagram.SendMessageAsync(
+            channel.ExternalId,  // IG User ID (the business account)
+            bearerToken,
+            request);
+    }
+
+    private async Task<Conversation> GetOrCreateConversationAsync(
+        Guid tenantId, Guid channelId, string instagramUserId)
     {
         var conversation = await _db.Conversations
-            .FirstOrDefaultAsync(c => c.TenantId == tenantId && c.InstagramUserId == instagramUserId);
+            .FirstOrDefaultAsync(c =>
+                c.TenantId == tenantId &&
+                c.ChannelId == channelId &&
+                c.InstagramUserId == instagramUserId);
 
         if (conversation == null)
         {
@@ -284,6 +290,7 @@ public class MessageHandler : IMessageHandler
             {
                 Id = Guid.NewGuid(),
                 TenantId = tenantId,
+                ChannelId = channelId,
                 InstagramUserId = instagramUserId,
                 StartedAt = DateTime.UtcNow,
                 LastMessageAt = DateTime.UtcNow
@@ -300,7 +307,8 @@ public class MessageHandler : IMessageHandler
         return conversation;
     }
 
-    private async Task SaveMessageAsync(Guid conversationId, string content, bool isFromUser, string? messageId)
+    private async Task SaveMessageAsync(
+        Guid conversationId, string content, bool isFromUser, string? messageId)
     {
         var message = new Message
         {
@@ -329,18 +337,6 @@ public class MessageHandler : IMessageHandler
                 Content = m.Content
             })
             .ToListAsync();
-    }
-
-    private async Task<SendMessageResponse> SendInstagramMessageAsync(string accessToken, string recipientId, string text)
-    {
-        var request = new SendMessageRequest
-        {
-            Recipient = new MessageRecipient { Id = recipientId },
-            Message = new OutgoingMessage { Text = text },
-            MessagingType = "RESPONSE"
-        };
-
-        return await _instagram.SendMessageAsync(accessToken, request);
     }
 
     private async Task IncrementMessageCountAsync(Guid tenantId)

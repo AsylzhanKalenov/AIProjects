@@ -1,57 +1,80 @@
 using InstagramBot.Data;
 using InstagramBot.Models;
-using InstagramBot.Models.Auth;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace InstagramBot.Controllers.Auth;
 
+/// <summary>
+/// OAuth flow using Instagram Business Login (instagram.com/oauth/authorize).
+/// 
+/// This is the NEW approach — client logs in via Instagram directly,
+/// no Facebook Page needed.
+/// 
+/// Flow:
+///   1. GET /auth/instagram/connect?tenantId=xxx → redirect to Instagram
+///   2. Client logs into Instagram, grants permissions
+///   3. Instagram redirects to GET /auth/instagram/callback?code=xxx&state=tenantId
+///   4. Server exchanges code → short-lived token → long-lived token
+///   5. Gets IG User ID → creates Channel → done!
+///
+/// Key differences from Facebook Login:
+///   - OAuth URL: instagram.com (not facebook.com)
+///   - Token exchange: POST form-data to api.instagram.com
+///   - Long-lived exchange: GET graph.instagram.com/access_token
+///   - Tokens expire in 60 days (need refresh!)
+///   - Uses Instagram App ID/Secret (not Facebook App ID)
+///   - No Facebook Page required
+/// </summary>
 [ApiController]
 [Route("auth")]
 public class InstagramAuthController : ControllerBase
 {
-    private readonly IConfiguration _config;
-    private readonly HttpClient _http;
     private readonly AppDbContext _db;
+    private readonly HttpClient _http;
+    private readonly IConfiguration _config;
     private readonly ILogger<InstagramAuthController> _logger;
 
     public InstagramAuthController(
-        IConfiguration config,
-        HttpClient http,
         AppDbContext db,
+        HttpClient http,
+        IConfiguration config,
         ILogger<InstagramAuthController> logger)
     {
-        _config = config;
-        _http = http;
         _db = db;
+        _http = http;
+        _config = config;
         _logger = logger;
     }
 
-    // Шаг 1: Клиент нажимает "Подключить" → редирект на Facebook
+    /// <summary>
+    /// Step 1: Redirect client to Instagram OAuth
+    /// Usage: GET /auth/instagram/connect?tenantId=xxx
+    /// </summary>
     [HttpGet("instagram/connect")]
     public IActionResult Connect([FromQuery] Guid tenantId)
     {
         _logger.LogInformation("Auth connect request: tenantId={TenantId}", tenantId);
 
-        var appId = _config["Meta:AppId"];
-        var redirectUri = _config["Meta:RedirectUri"];
-        
-        _logger.LogInformation("appId: {appId} redirectUri: {redirectUri}", appId, redirectUri);
-        
-        var url = $"https://www.facebook.com/v25.0/dialog/oauth"
+        var appId = _config["Instagram:AppId"];
+        var redirectUri = _config["Instagram:RedirectUri"];
+
+        // Instagram Business Login URL
+        var url = $"https://www.instagram.com/oauth/authorize"
                   + $"?client_id={appId}"
                   + $"&redirect_uri={Uri.EscapeDataString(redirectUri!)}"
-                  + $"&scope=instagram_basic,instagram_manage_messages,"
-                  + "pages_manage_metadata,pages_messaging,pages_show_list"
-                  + $"&state={tenantId}"
-                  + $"&response_type=code";
-        
-        _logger.LogInformation("Generated uri: {url}", url);
-        
+                  + $"&scope=instagram_business_basic,instagram_business_manage_messages"
+                  + $"&response_type=code"
+                  + $"&state={tenantId}";
+
         return Redirect(url);
     }
 
-    // Шаг 2: Facebook редиректит сюда с code
+    /// <summary>
+    /// Step 2: Instagram redirects here with authorization code
+    /// </summary>
     [HttpGet("instagram/callback")]
     public async Task<IActionResult> Callback(
         [FromQuery] string? code,
@@ -59,7 +82,7 @@ public class InstagramAuthController : ControllerBase
         [FromQuery] string? error,
         [FromQuery(Name = "error_description")] string? errorDescription)
     {
-        // ── Клиент отказался от авторизации ──
+        // Client denied authorization
         if (!string.IsNullOrEmpty(error))
         {
             _logger.LogWarning("OAuth denied: {Error} — {Description}", error, errorDescription);
@@ -69,118 +92,120 @@ public class InstagramAuthController : ControllerBase
         if (string.IsNullOrEmpty(code))
             return BadRequest("Missing code parameter");
 
+        // Strip #_ suffix that Instagram appends
+        code = code.TrimEnd('#', '_');
+
         _logger.LogInformation("Auth callback for tenant {TenantId}", state);
 
-        // ── Проверяем что тенант существует ──
         var tenant = await _db.Tenants.FindAsync(state);
         if (tenant == null)
             return NotFound("Тенант не найден");
 
         try
         {
-            var appId = _config["Meta:AppId"];
-            var appSecret = _config["Meta:AppSecret"];
-            var redirectUri = _config["Meta:RedirectUri"];
+            var appId = _config["Instagram:AppId"];
+            var appSecret = _config["Instagram:AppSecret"];
+            var redirectUri = _config["Instagram:RedirectUri"];
 
-            // ── 1. code → short-lived token ──
-            var tokenUrl = $"https://graph.facebook.com/v25.0/oauth/access_token"
-                           + $"?client_id={appId}"
-                           + $"&client_secret={appSecret}"
-                           + $"&redirect_uri={Uri.EscapeDataString(redirectUri!)}"
-                           + $"&code={code}";
+            // ── 1. Exchange code → short-lived token (POST form-data) ──
+            var tokenResponse = await _http.PostAsync(
+                "https://api.instagram.com/oauth/access_token",
+                new FormUrlEncodedContent(new Dictionary<string, string>
+                {
+                    ["client_id"] = appId!,
+                    ["client_secret"] = appSecret!,
+                    ["grant_type"] = "authorization_code",
+                    ["redirect_uri"] = redirectUri!,
+                    ["code"] = code
+                }));
 
-            var tokenResp = await _http.GetFromJsonAsync<TokenResponse>(tokenUrl);
-            if (string.IsNullOrEmpty(tokenResp?.AccessToken))
-                return StatusCode(502, "Не удалось получить токен от Facebook");
+            var tokenJson = await tokenResponse.Content.ReadAsStringAsync();
 
-            // ── 2. short-lived → long-lived token ──
-            var longLivedUrl = $"https://graph.facebook.com/v25.0/oauth/access_token"
-                               + $"?grant_type=fb_exchange_token"
-                               + $"&client_id={appId}"
+            if (!tokenResponse.IsSuccessStatusCode)
+            {
+                _logger.LogError("Token exchange failed: {Response}", tokenJson);
+                return StatusCode(502, "Не удалось получить токен от Instagram");
+            }
+
+            var tokenResult = JsonSerializer.Deserialize<InstagramTokenResponse>(tokenJson);
+            if (tokenResult?.Data == null || tokenResult.Data.Count == 0)
+            {
+                _logger.LogError("Empty token response: {Response}", tokenJson);
+                return StatusCode(502, "Пустой ответ при обмене токена");
+            }
+
+            var shortLivedToken = tokenResult.Data[0].AccessToken;
+            var igUserId = tokenResult.Data[0].UserId;
+
+            _logger.LogInformation("Got short-lived token for IG user {IgUserId}", igUserId);
+
+            // ── 2. Exchange short-lived → long-lived token (60 days) ──
+            var longLivedUrl = $"https://graph.instagram.com/access_token"
+                               + $"?grant_type=ig_exchange_token"
                                + $"&client_secret={appSecret}"
-                               + $"&fb_exchange_token={tokenResp.AccessToken}";
+                               + $"&access_token={shortLivedToken}";
 
-            var longLived = await _http.GetFromJsonAsync<TokenResponse>(longLivedUrl);
-            if (string.IsNullOrEmpty(longLived?.AccessToken))
+            var longLivedResp = await _http.GetAsync(longLivedUrl);
+            var longLivedJson = await longLivedResp.Content.ReadAsStringAsync();
+
+            if (!longLivedResp.IsSuccessStatusCode)
+            {
+                _logger.LogError("Long-lived token exchange failed: {Response}", longLivedJson);
                 return StatusCode(502, "Не удалось получить long-lived токен");
-
-            // ── 3. Получаем список страниц клиента ──
-            var pagesUrl = $"https://graph.facebook.com/v25.0/me/accounts"
-                           + $"?fields=id,name,access_token"
-                           + $"&access_token={longLived.AccessToken}";
-
-            var pages = await _http.GetFromJsonAsync<PagesResponse>(pagesUrl);
-
-            if (pages?.Data == null || pages.Data.Count == 0)
-            {
-                _logger.LogWarning(
-                    "No pages returned for tenant {TenantId}. " +
-                    "Клиент не выбрал страницу или нет прав pages_show_list", state);
-                return BadRequest(
-                    "Facebook не вернул ни одной страницы. " +
-                    "Убедитесь, что вы выбрали свою страницу при авторизации.");
             }
 
-            // ── 4. Создаём Channel для каждой страницы ──
-            var connectedPages = new List<string>();
+            var longLived = JsonSerializer.Deserialize<LongLivedTokenResponse>(longLivedJson);
+            var expiresAt = DateTime.UtcNow.AddSeconds(longLived?.ExpiresIn ?? 5184000);
 
-            foreach (var page in pages.Data)
+            // ── 3. Get Instagram account info ──
+            var profileUrl = $"https://graph.instagram.com/v25.0/me"
+                             + $"?fields=user_id,username,name"
+                             + $"&access_token={longLived!.AccessToken}";
+
+            var profileResp = await _http.GetAsync(profileUrl);
+            var profileJson = await profileResp.Content.ReadAsStringAsync();
+            var profile = JsonSerializer.Deserialize<InstagramProfile>(profileJson);
+
+            var displayName = profile?.Username ?? profile?.Name ?? igUserId;
+
+            // ── 4. Check for duplicate ──
+            var exists = await _db.Channels.AnyAsync(c =>
+                c.ExternalId == igUserId && c.Type == ChannelType.Instagram);
+
+            if (exists)
             {
-                // Проверка на дубликат
-                var exists = await _db.Channels.AnyAsync(c =>
-                    c.ExternalId == page.Id && c.Type == ChannelType.Instagram);
+                // Update token if channel already exists
+                var existingChannel = await _db.Channels.FirstAsync(c =>
+                    c.ExternalId == igUserId && c.Type == ChannelType.Instagram);
+                existingChannel.AccessToken = longLived.AccessToken;
+                existingChannel.TokenExpiresAt = expiresAt;
+                existingChannel.UpdatedAt = DateTime.UtcNow;
+                await _db.SaveChangesAsync();
 
-                if (exists)
-                {
-                    _logger.LogInformation(
-                        "Page {PageId} ({PageName}) already connected, skipping",
-                        page.Id, page.Name);
-                    continue;
-                }
-
-                var channel = new Channel
-                {
-                    Id = Guid.NewGuid(),
-                    TenantId = state,
-                    Type = ChannelType.Instagram,
-                    DisplayName = $"Instagram {page.Name}",
-                    ExternalId = page.Id,
-                    AccessToken = page.AccessToken, // Page-level token (permanent!)
-                    IsActive = true,
-                    CreatedAt = DateTime.UtcNow
-                };
-
-                _db.Channels.Add(channel);
-                connectedPages.Add(page.Name);
-
-                // ── 5. Подписываем страницу на вебхуки ──
-                try
-                {
-                    await _http.PostAsync(
-                        $"https://graph.facebook.com/v25.0/{page.Id}/subscribed_apps"
-                        + $"?subscribed_fields=messages,messaging_postbacks"
-                        + $"&access_token={page.AccessToken}", null);
-
-                    _logger.LogInformation(
-                        "Subscribed page {PageId} ({PageName}) to webhooks",
-                        page.Id, page.Name);
-                }
-                catch (Exception ex)
-                {
-                    // Не критично — можно подписать вручную позже
-                    _logger.LogWarning(ex,
-                        "Failed to subscribe page {PageId} to webhooks", page.Id);
-                }
+                _logger.LogInformation("Updated token for existing channel {IgUserId}", igUserId);
+                return Ok(new { success = true, message = "Токен обновлён", account = displayName });
             }
 
+            // ── 5. Create Channel ──
+            var channel = new Channel
+            {
+                Id = Guid.NewGuid(),
+                TenantId = state,
+                Type = ChannelType.Instagram,
+                DisplayName = $"Instagram @{displayName}",
+                ExternalId = igUserId,       // Instagram-scoped User ID
+                AccessToken = longLived.AccessToken,
+                TokenExpiresAt = expiresAt,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            _db.Channels.Add(channel);
             await _db.SaveChangesAsync();
 
-            if (connectedPages.Count == 0)
-                return Ok("Все страницы уже были подключены ранее.");
-
             _logger.LogInformation(
-                "Connected {Count} page(s) for tenant {TenantId}: {Pages}",
-                connectedPages.Count, state, string.Join(", ", connectedPages));
+                "Created Instagram channel for @{Username} (IG ID: {IgUserId}), tenant {TenantId}",
+                displayName, igUserId, state);
 
             // В продакшене — редирект на фронтенд:
             // return Redirect($"https://yourdomain.com/dashboard?connected=true");
@@ -188,8 +213,9 @@ public class InstagramAuthController : ControllerBase
             return Ok(new
             {
                 success = true,
-                message = $"Подключено страниц: {connectedPages.Count}",
-                pages = connectedPages
+                message = "Instagram подключён!",
+                account = displayName,
+                igUserId
             });
         }
         catch (Exception ex)
@@ -197,5 +223,51 @@ public class InstagramAuthController : ControllerBase
             _logger.LogError(ex, "OAuth callback failed for tenant {TenantId}", state);
             return StatusCode(500, "Ошибка при подключении. Попробуйте ещё раз.");
         }
+    }
+
+    // ================================================================
+    // DTOs for Instagram API responses
+    // ================================================================
+
+    private class InstagramTokenResponse
+    {
+        [JsonPropertyName("data")]
+        public List<InstagramTokenData>? Data { get; set; }
+    }
+
+    private class InstagramTokenData
+    {
+        [JsonPropertyName("access_token")]
+        public string AccessToken { get; set; } = string.Empty;
+
+        [JsonPropertyName("user_id")]
+        public string UserId { get; set; } = string.Empty;
+
+        [JsonPropertyName("permissions")]
+        public string? Permissions { get; set; }
+    }
+
+    private class LongLivedTokenResponse
+    {
+        [JsonPropertyName("access_token")]
+        public string AccessToken { get; set; } = string.Empty;
+
+        [JsonPropertyName("token_type")]
+        public string? TokenType { get; set; }
+
+        [JsonPropertyName("expires_in")]
+        public long? ExpiresIn { get; set; }
+    }
+
+    private class InstagramProfile
+    {
+        [JsonPropertyName("user_id")]
+        public string? UserId { get; set; }
+
+        [JsonPropertyName("username")]
+        public string? Username { get; set; }
+
+        [JsonPropertyName("name")]
+        public string? Name { get; set; }
     }
 }

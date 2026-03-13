@@ -4,16 +4,25 @@ using Refit;
 namespace InstagramBot.Interfaces;
 
 /// <summary>
-/// Instagram Graph API client (via Refit)
+/// Instagram API client via Instagram Login (graph.instagram.com).
+/// 
+/// Key differences from old Facebook Login approach:
+///   - Base URL: graph.instagram.com (not graph.facebook.com)
+///   - Auth: Bearer token in Authorization header (not query param)
+///   - Endpoint: POST /{ig_user_id}/messages (not /me/messages)
 /// </summary>
 public interface IInstagramApi
 {
     /// <summary>
-    /// Send a message to a user
+    /// Send a message to an Instagram user.
+    /// POST /{ig_user_id}/messages
+    /// 
+    /// Uses Authorization: Bearer header for authentication.
     /// </summary>
-    [Post("/v25.0/me/messages")]
+    [Post("/v25.0/{igUserId}/messages")]
     Task<SendMessageResponse> SendMessageAsync(
-        [Query] string access_token,
+        string igUserId,
+        [Header("Authorization")] string bearerToken,
         [Body] SendMessageRequest request);
 
     /// <summary>
@@ -23,12 +32,13 @@ public interface IInstagramApi
     Task<UserProfile> GetUserProfileAsync(
         string userId,
         [Query] string fields,
-        [Query] string access_token);
+        [Header("Authorization")] string bearerToken);
 }
 
 public class UserProfile
 {
     public string? Id { get; set; }
     public string? Name { get; set; }
+    public string? Username { get; set; }
     public string? ProfilePic { get; set; }
 }
