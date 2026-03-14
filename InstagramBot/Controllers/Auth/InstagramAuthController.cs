@@ -106,6 +106,10 @@ public class InstagramAuthController : ControllerBase
             var appId = _config["Instagram:AppId"];
             var appSecret = _config["Instagram:AppSecret"];
             var redirectUri = _config["Instagram:RedirectUri"];
+            
+            _logger.LogInformation(
+                "Token exchange params: client_id={AppId}, redirect_uri={RedirectUri}, code_length={CodeLength}",
+                appId, redirectUri, code?.Length);
 
             // ── 1. Exchange code → short-lived token (POST form-data) ──
             var tokenResponse = await _http.PostAsync(
