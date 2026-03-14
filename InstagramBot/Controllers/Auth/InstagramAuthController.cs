@@ -110,6 +110,12 @@ public class InstagramAuthController : ControllerBase
             _logger.LogInformation(
                 "Token exchange params: client_id={AppId}, redirect_uri={RedirectUri}, code_length={CodeLength}",
                 appId, redirectUri, code?.Length);
+            
+            _logger.LogInformation(
+                "Token exchange: redirect_uri={RedirectUri}, code_starts={CodeStart}, code_ends={CodeEnd}",
+                redirectUri,
+                code[..20],        // первые 20 символов
+                code[^10..]); 
 
             // ── 1. Exchange code → short-lived token (POST form-data) ──
             var tokenResponse = await _http.PostAsync(
