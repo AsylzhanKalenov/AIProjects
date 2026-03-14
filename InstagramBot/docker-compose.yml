@@ -14,7 +14,6 @@ services:
       - Meta__AppId=${META_APP_ID}
       - Meta__AppSecret=${META_APP_SECRET}
       - Meta__RedirectUri=https://insta-ai-bot.ru/auth/instagram/callback
-      - # Instagram Business Login (from App Dashboard > Instagram > API setup with Instagram Login)
       - Instagram__AppId=${INSTAGRAM_APP_ID}
       - Instagram__AppSecret=${INSTAGRAM_APP_SECRET}
       - Instagram__RedirectUri=https://insta-ai-bot.ru/auth/instagram/callback
