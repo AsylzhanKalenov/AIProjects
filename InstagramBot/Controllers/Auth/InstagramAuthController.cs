@@ -142,15 +142,15 @@ public class InstagramAuthController : ControllerBase
                 return StatusCode(502, "Не удалось получить токен от Instagram");
             }
 
-            var tokenResult = JsonSerializer.Deserialize<InstagramTokenResponse>(tokenJson);
-            if (tokenResult?.Data == null || tokenResult.Data.Count == 0)
+            var tokenResult = JsonSerializer.Deserialize<InstagramTokenData>(tokenJson);
+            if (tokenResult == null)
             {
                 _logger.LogError("Empty token response: {Response}", tokenJson);
                 return StatusCode(502, "Пустой ответ при обмене токена");
             }
 
-            var shortLivedToken = tokenResult.Data[0].AccessToken;
-            var igUserId = tokenResult.Data[0].UserId;
+            var shortLivedToken = tokenResult.AccessToken;
+            var igUserId = tokenResult.UserId;
 
             _logger.LogInformation("Got short-lived token for IG user {IgUserId}", igUserId);
 
