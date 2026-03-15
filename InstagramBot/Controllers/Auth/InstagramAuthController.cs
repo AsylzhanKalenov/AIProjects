@@ -315,7 +315,7 @@ public class InstagramAuthController : ControllerBase
         public long UserId { get; set; }
 
         [JsonPropertyName("permissions")]
-        public string? Permissions { get; set; }
+        public List<string>? Permissions { get; set; }
     }
 
     private class LongLivedTokenResponse
