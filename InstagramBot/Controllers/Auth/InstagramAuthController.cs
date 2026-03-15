@@ -108,8 +108,8 @@ public class InstagramAuthController : ControllerBase
             var redirectUri = _config["Instagram:RedirectUri"];
             
             _logger.LogInformation(
-                "Token exchange params: client_id={AppId}, redirect_uri={RedirectUri}, code_length={CodeLength}",
-                appId, redirectUri, code?.Length);
+                "Token exchange params: client_id={AppId}, redirect_uri={RedirectUri}, code={Code};",
+                appId, redirectUri, code);
             
             _logger.LogInformation(
                 "Token exchange: redirect_uri={RedirectUri}, code_starts={CodeStart}, code_ends={CodeEnd}",
@@ -118,7 +118,6 @@ public class InstagramAuthController : ControllerBase
                 code[^10..]); 
 
             // ── 1. Exchange code → short-lived token (POST form-data) ──
-            // ── 1. Exchange code → short-lived token (multipart form-data) ──
             var dict = new Dictionary<string, string>
             {
                 { "client_id", appId! },
@@ -233,6 +232,62 @@ public class InstagramAuthController : ControllerBase
                 account = displayName,
                 igUserId
             });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "OAuth callback failed for tenant {TenantId}", state);
+            return StatusCode(500, "Ошибка при подключении. Попробуйте ещё раз.");
+        }
+    }
+
+    [HttpGet("instagram/callback1")]
+    public async Task<IActionResult> Callback1(
+        [FromQuery] string? code,
+        [FromQuery] Guid state,
+        [FromQuery] string? error,
+        [FromQuery(Name = "error_description")]
+        string? errorDescription)
+    {
+        if (!string.IsNullOrEmpty(error))
+        {
+            _logger.LogWarning("OAuth denied: {Error} — {Description}", error, errorDescription);
+            return BadRequest($"Авторизация отклонена: {errorDescription}");
+        }
+
+        if (string.IsNullOrEmpty(code))
+            return BadRequest("Missing code parameter");
+
+        // Strip #_ suffix that Instagram appends
+        code = code.TrimEnd('#', '_');
+
+        _logger.LogInformation("Auth callback for tenant {TenantId}", state);
+
+        var tenant = await _db.Tenants.FindAsync(state);
+        if (tenant == null)
+            return NotFound("Тенант не найден");
+
+        try
+        {
+            var appId = _config["Instagram:AppId"];
+            var appSecret = _config["Instagram:AppSecret"];
+            var redirectUri = _config["Instagram:RedirectUri"];
+
+            _logger.LogInformation(
+                "Token exchange params: client_id={AppId}, redirect_uri={RedirectUri}, code={Code};",
+                appId, redirectUri, code);
+
+            _logger.LogInformation(
+                "Token exchange: redirect_uri={RedirectUri}, code_starts={CodeStart}, code_ends={CodeEnd}",
+                redirectUri,
+                code[..20], // первые 20 символов
+                code[^10..]);
+
+            return Ok(new
+            {
+                success = true,
+                message = "Instagram test!"
+            });
+            
         }
         catch (Exception ex)
         {
