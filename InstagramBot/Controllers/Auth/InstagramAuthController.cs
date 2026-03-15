@@ -181,17 +181,17 @@ public class InstagramAuthController : ControllerBase
             var profileJson = await profileResp.Content.ReadAsStringAsync();
             var profile = JsonSerializer.Deserialize<InstagramProfile>(profileJson);
 
-            var displayName = profile?.Username ?? profile?.Name ?? igUserId;
+            var displayName = profile?.Username ?? profile?.Name ?? igUserId.ToString();
 
             // ── 4. Check for duplicate ──
             var exists = await _db.Channels.AnyAsync(c =>
-                c.ExternalId == igUserId && c.Type == ChannelType.Instagram);
+                c.ExternalId == igUserId.ToString() && c.Type == ChannelType.Instagram);
 
             if (exists)
             {
                 // Update token if channel already exists
                 var existingChannel = await _db.Channels.FirstAsync(c =>
-                    c.ExternalId == igUserId && c.Type == ChannelType.Instagram);
+                    c.ExternalId == igUserId.ToString() && c.Type == ChannelType.Instagram);
                 existingChannel.AccessToken = longLived.AccessToken;
                 existingChannel.TokenExpiresAt = expiresAt;
                 existingChannel.UpdatedAt = DateTime.UtcNow;
@@ -208,7 +208,7 @@ public class InstagramAuthController : ControllerBase
                 TenantId = state,
                 Type = ChannelType.Instagram,
                 DisplayName = $"Instagram @{displayName}",
-                ExternalId = igUserId,       // Instagram-scoped User ID
+                ExternalId = igUserId.ToString(),       // Instagram-scoped User ID
                 AccessToken = longLived.AccessToken,
                 TokenExpiresAt = expiresAt,
                 IsActive = true,
@@ -312,7 +312,7 @@ public class InstagramAuthController : ControllerBase
         public string AccessToken { get; set; } = string.Empty;
 
         [JsonPropertyName("user_id")]
-        public string UserId { get; set; } = string.Empty;
+        public int UserId { get; set; }
 
         [JsonPropertyName("permissions")]
         public string? Permissions { get; set; }
