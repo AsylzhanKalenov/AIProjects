@@ -119,16 +119,21 @@ public class InstagramAuthController : ControllerBase
 
             // ── 1. Exchange code → short-lived token (POST form-data) ──
             // ── 1. Exchange code → short-lived token (multipart form-data) ──
-            var formContent = new MultipartFormDataContent();
-            formContent.Add(new StringContent(appId!), "client_id");
-            formContent.Add(new StringContent(appSecret!), "client_secret");
-            formContent.Add(new StringContent("authorization_code"), "grant_type");
-            formContent.Add(new StringContent(redirectUri!), "redirect_uri");
-            formContent.Add(new StringContent(code), "code");
+            var dict = new Dictionary<string, string>
+            {
+                { "client_id", appId! },
+                { "client_secret", appSecret! },
+                { "grant_type", "authorization_code" },
+                { "redirect_uri", redirectUri! }, // Должен быть 1-в-1 как в App Dashboard
+                { "code", code }
+            };
 
-            var tokenResponse = await _http.PostAsync(
-                "https://api.instagram.com/oauth/access_token",
-                formContent);
+            var request = new HttpRequestMessage(HttpMethod.Post, "https://api.instagram.com/oauth/access_token")
+            {
+                Content = new FormUrlEncodedContent(dict)
+            };
+
+            var tokenResponse = await _http.SendAsync(request);
 
             var tokenJson = await tokenResponse.Content.ReadAsStringAsync();
 
