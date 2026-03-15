@@ -312,7 +312,7 @@ public class InstagramAuthController : ControllerBase
         public string AccessToken { get; set; } = string.Empty;
 
         [JsonPropertyName("user_id")]
-        public int UserId { get; set; }
+        public long UserId { get; set; }
 
         [JsonPropertyName("permissions")]
         public string? Permissions { get; set; }
